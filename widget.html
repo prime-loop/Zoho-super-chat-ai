@@ -4,20 +4,16 @@
 <head>
   <meta charset="utf-8">
   <title>AI SuperChat</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+  </style>
 </head>
-<body style="margin:0">
+<body>
   <div id="root"></div>
-
-  <!-- stub Zoho SDK for local testing; remove in production -->
-  <script>
-    window.ZOHODESK = {
-      get: (key) => Promise.resolve("LOCAL_TICKET_ID")
-    };
-  </script>
 
   <!-- Markdown renderer -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <!-- your main logic -->
+  <!-- Main logic -->
   <script src="embed.js"></script>
 </body>
 </html>
