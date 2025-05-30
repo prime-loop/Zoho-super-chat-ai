@@ -7,8 +7,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- CONFIGURATION ---
     // Replace with your ACTUAL N8N PRODUCTION WEBHOOK URLS
-    const N8N_CHAT_WEBHOOK_URL = 'YOUR_N8N_CHAT_WEBHOOK_URL';
-    const N8N_EMAIL_DRAFTER_WEBHOOK_URL = 'YOUR_N8N_EMAIL_DRAFTER_WEBHOOK_URL';
+    const N8N_CHAT_WEBHOOK_URL = 'https://backend.api.outpilot.app/webhook/a12d5d4a-344c-446a-b5da-dea9891fffc5/chat';
+    const N8N_EMAIL_DRAFTER_WEBHOOK_URL = 'https://backend.api.outpilot.app/webhook/Email_Drafter';
     // ---------------------
 
     let sessionId = localStorage.getItem('chatSessionId') || `session_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
