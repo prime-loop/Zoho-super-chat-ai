@@ -1,11 +1,24 @@
+<!-- widget.html -->
 <!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><title>AI Chat</title></head>
+<head>
+  <meta charset="utf-8">
+  <title>AI Chat</title>
+</head>
 <body style="margin:0">
   <div id="root"></div>
+
+  <!-- Stub Zoho SDK for local testing; remove in production -->
+  <script>
+    window.ZOHODESK = {
+      get: (key) => Promise.resolve("LOCAL_TICKET_ID")
+    };
+  </script>
+
   <!-- Markdown renderer -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <!-- Your embed logic -->
+
+  <!-- Main embed logic -->
   <script src="embed.js"></script>
 </body>
 </html>
