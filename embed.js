@@ -102,12 +102,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 sessionId: sessionId
             }, isInsideZohoDesk());
 
-            const data = await response.json(); // For fetch, this parses JSON body
+            const data = await response.json();
             console.log('Chat response from n8n:', data);
-            if (data.response) {
-                addMessageToChat(marked.parse(data.response), 'ai-message');
+            if (data.output) { // <--- CHANGE 'data.response' to 'data.output'
+               addMessageToChat(marked.parse(data.output), 'ai-message'); // <--- CHANGE 'data.response' to 'data.output'
             } else {
-                addMessageToChat("Received an empty response.", 'status-message');
+                addMessageToChat("Received an empty or malformed response from AI.", 'status-message');
+                console.warn("Response from n8n did not contain an 'output' key. Full data:", data);
             }
         } catch (error) {
             // Error already logged by makeRequest
