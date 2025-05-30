@@ -1,39 +1,54 @@
 // embed.js
 
-// grab the container
+// --- 1) CONFIGURE these for your test run ---
+const ticketId = "199939000000322001";
+const orgId    = "60041429812";
+
+const CHAT_URL  = "https://backend.api.outpilot.app/webhook/a12d5d4a-344c-446a-b5da-dea9891fffc5/chat";
+const DRAFT_URL = "https://backend.api.outpilot.app/webhook/Email_Drafter";
+// -------------------------------------------------
+
+// grab container
 const root = document.getElementById("root");
-let ticketId = null;
 
-// pull in Desk context
-ZOHODESK.get("ticket.id").then(id => ticketId = id);
-
-// render the chat UI + buttons
+// render the UI
 root.innerHTML = `
   <style>
-    .msg { margin:4px 0; padding:6px; border-radius:4px; }
-    .me  { background:#e1f5fe; }
+    .msg { margin:6px 0; padding:8px; border-radius:4px; line-height:1.4; }
+    .me  { background:#e1f5fe; text-align:right; }
     .ai  { background:#f1f8e9; }
+    #thread { height:320px; overflow-y:auto; padding:8px; border-bottom:1px solid #ccc; }
+    #input-area { padding:8px; display:flex; gap:8px; }
+    #input-area input { flex:1; padding:6px; }
+    #btns    { padding:8px; display:flex; gap:8px; }
   </style>
-  <div id="thread" style="height:400px; overflow-y:auto; padding:8px; border-bottom:1px solid #ccc;"></div>
-  <div style="padding:8px;">
-    <input id="q" placeholder="Type message…" style="width:70%; padding:6px;">
+  <div id="thread"></div>
+  <div id="input-area">
+    <input id="q" placeholder="Type your message…" />
     <button id="send">Send</button>
   </div>
-  <hr style="margin:8px 0;">
-  <div style="padding:8px;">
+  <div id="btns">
     <button id="refresh">Refresh product data</button>
     <button id="draft">Create draft</button>
   </div>
 `;
 
-// helper to call your n8n flows with timeout
-const postFlow = async (url, body) => {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 90000);
+const thread = document.getElementById("thread");
+
+// helper: append a message and autoscroll
+function pushMsg(html, cls) {
+  thread.insertAdjacentHTML("beforeend", `<div class="msg ${cls}">${html}</div>`);
+  thread.scrollTop = thread.scrollHeight;
+}
+
+// helper: call your flow with 90 sec timeout
+async function postFlow(url, body) {
+  const ctrl  = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), 90000);
   try {
     const res = await fetch(url, {
       method: "POST",
-      headers: {"Content-Type":"application/json"},
+      headers: { "Content-Type":"application/json" },
       body: JSON.stringify(body),
       signal: ctrl.signal
     });
@@ -45,38 +60,31 @@ const postFlow = async (url, body) => {
     alert("Request failed or timed out.");
     throw e;
   }
-};
+}
 
-// helper to append a message
-const pushMsg = (html, cls) => {
-  const th = document.getElementById("thread");
-  th.insertAdjacentHTML("beforeend", `<div class="msg ${cls}">${html}</div>`);
-  th.scrollTop = th.scrollHeight;
-};
-
-// send chat messages
+// Send chat
 document.getElementById("send").onclick = async () => {
   const text = document.getElementById("q").value.trim();
   if (!text) return;
   pushMsg(marked.parse(text), "me");
   document.getElementById("q").value = "";
   try {
-    const { answer } = await postFlow(
-      "https://backend.api.outpilot.app/webhook/a12d5d4a-344c-446a-b5da-dea9891fffc5/chat",
-      { ticketId, text }
-    );
+    const { answer } = await postFlow(CHAT_URL, { ticketId, orgId, text });
     pushMsg(marked.parse(answer), "ai");
-  } catch (e) { console.error(e); }
+  } catch {}
 };
 
-// refresh button
+// Refresh button
 document.getElementById("refresh").onclick = () =>
-  postFlow("https://n8n.YOURDOMAIN.com/webhook/refresh", { ticketId })
+  postFlow(CHAT_URL, { ticketId, orgId, action: "refresh" })
     .then(() => alert("Products refreshed"))
     .catch(() => {});
 
-// draft button
-document.getElementById("draft").onclick = () =>
-  postFlow("https://backend.api.outpilot.app/webhook/Email_Drafter", { ticketId })
-    .then(() => alert("Draft created"))
-    .catch(() => {});
+// Draft button
+document.getElementById("draft").onclick = async () => {
+  try {
+    const { emailBody } = await postFlow(DRAFT_URL, { ticketId, orgId });
+    // render the draft with simple <pre>
+    pushMsg(`<strong>Draft Email:</strong><pre>${emailBody}</pre>`, "ai");
+  } catch {}
+};
