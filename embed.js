@@ -1,292 +1,580 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const chatContainer = document.getElementById('chatContainer');
-    const chatInput = document.getElementById('chatInput');
-    const sendButton = document.getElementById('sendButton');
-    const refreshButton = document.getElementById('refreshButton');
-    const draftEmailButton = document.getElementById('draftEmailButton');
+  /* ========== DOM refs ========== */
+  const statusBar       = document.getElementById('statusBar');
+  const tabChat         = document.getElementById('tab-chat');
+  const tabActions      = document.getElementById('tab-actions');
+  const contentChat     = document.getElementById('content-chat');
+  const contentActions  = document.getElementById('content-actions');
 
-    // --- CONFIGURATION ---
-    // Make sure these are your correct n8n PRODUCTION WEBHOOK URLS
-    const N8N_CHAT_WEBHOOK_URL = 'https://backend.api.outpilot.app/webhook/a12d5d4a-344c-446a-b5da-dea9891fffc5/chat';
-    const N8N_EMAIL_DRAFTER_WEBHOOK_URL = 'https://backend.api.outpilot.app/webhook/Email_Drafter';
-    // ---------------------
+  const chatContainer   = document.getElementById('chatContainer');
+  const chatInput       = document.getElementById('chatInput');
+  const sendButton      = document.getElementById('sendButton');
 
-    let sessionId = localStorage.getItem('chatSessionId') || `session_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-    localStorage.setItem('chatSessionId', sessionId);
+  const refreshButton   = document.getElementById('refreshButton');
+  const draftEmailBtn   = document.getElementById('draftEmailButton');
+  const productWindow   = document.getElementById('productWindow');
 
-    console.log("Using sessionId:", sessionId);
+  /* ========== Config ========== */
+  const CHAT_URL  = "https://backend.api.outpilot.app/webhook/a12d5d4a-344c-446a-b5da-dea9891fffc5/chat";
+  const DRAFT_URL = "https://backend.api.outpilot.app/webhook/Email_Drafter";
+  const REFRESH_DATA_URL = "https://backend.api.outpilot.app/webhook/Refresh_Data";
 
-    // Function to determine if running inside Zoho Desk
-    function isInsideZohoDesk() {
-        return typeof ZOHODESK !== 'undefined' && ZOHODESK !== null;
+  /* ========== Globals ========== */
+  let isSDKReady = false;
+  let sessionId = localStorage.getItem('chatSessionId') || 
+    `session_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  localStorage.setItem('chatSessionId', sessionId);
+  let isRefreshingData = false;
+  let orderSummary = null;
+  
+
+  /* ========== Helpers ========== */
+  // FIXED: Enhanced markdown parser
+    const markedParse = (content) => {
+    console.log('🔍 Parsing markdown content:', content?.substring(0, 100) + '...');
+    
+    if (!content || typeof content !== 'string') {
+    console.warn('⚠️ Invalid content for markdown parsing');
+    return content || '';
     }
+    
+    try {
+    // tweak 1: enable single line breaks → <br>
+    // tweak 2: wrap in a container with extra line-height & margin
+    const options = {
+      gfm: true,
+      breaks: true
+    };
+    
+    const rawHtml = typeof marked === 'function'
+      ? marked.parse(content, options)
+      : marked.parse(content, options);
+    
+    const styled = `
+      <div style="
+        line-height: 1.6;
+        margin: 1em 0;
+      ">
+        ${rawHtml}
+      </div>
+    `;
+    
+    console.log('✅ Markdown parsed successfully with extra spacing');
+    return styled;
+    } catch (error) {
+    console.error('❌ Markdown parsing error:', error);
+    return content;
+    }
+    };
+  function updateStatus(message, isError = false) {
+    statusBar.textContent = message;
+    statusBar.style.background = isError ? '#ffe6e6' : '#e8f4f8';
+    statusBar.style.color = isError ? '#d00' : '#666';
+  }
 
-    // Generic request function
-    async function makeRequest(url, method, body, isZohoContext = false) {
-        console.log(`Making ${method} request to ${url} with body:`, JSON.stringify(body)); // Log stringified body for cleaner console
-        try {
-            let response;
-            if (isZohoContext && isInsideZohoDesk()) {
-                console.log("Using ZOHODESK.request()");
-                const settings = {
-                    url: url,
-                    type: method.toUpperCase(),
-                    headers: { "Content-Type": "application/json" },
-                    data: JSON.stringify(body),
-                    // Note: ZOHODESK.request might have its own way of handling 'ok' and 'status'.
-                    // The promise it returns usually resolves on success and rejects on error.
-                    // The 'response' object from ZOHODESK.request might be the parsed data directly,
-                    // or a string that needs parsing, or an object wrapping the data.
-                    // This part might need fine-tuning based on actual ZOHODESK.request() behavior.
-                };
+  function enableUI() {
+    chatInput.disabled = false;
+    sendButton.disabled = false;
+    refreshButton.disabled = false;
+    draftEmailBtn.disabled = false;
+    chatInput.placeholder = "Type your message…";
+  }
 
-                // Simulating a fetch-like response object from ZOHODESK.request result
-                // This is a common pattern, but adjust if ZOHODESK.request behaves differently.
-                let zohoResponseData;
-                try {
-                    zohoResponseData = await ZOHODESK.request(settings);
-                    console.log("ZOHODESK.request successful, raw response:", zohoResponseData);
-                } catch (zohoError) {
-                    // ZOHODESK.request often throws an error object for non-2xx responses
-                    console.error("ZOHODESK.request error object:", zohoError);
-                    // Attempt to create a fetch-like error response
-                    const errorStatus = zohoError.status || 500; // Or some default
-                    const errorText = zohoError.message || JSON.stringify(zohoError);
-                    return {
-                        ok: false,
-                        status: errorStatus,
-                        json: async () => { throw new Error(errorText); }, // or return error object if parsable
-                        text: async () => errorText
-                    };
-                }
+  function addMsg(html, cls = 'ai-message') {
+    const div = document.createElement('div');
+    div.className = `message ${cls}`;
+    div.innerHTML = html;
+    chatContainer.appendChild(div);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+  }
 
-                // Assuming zohoResponseData is the parsed JSON or needs parsing
-                let parsedData;
-                if (typeof zohoResponseData === 'string') {
-                    try {
-                        parsedData = JSON.parse(zohoResponseData);
-                    } catch (e) {
-                        console.warn("Response from ZOHODESK.request was string but not valid JSON:", zohoResponseData);
-                        parsedData = zohoResponseData; // Treat as plain text
-                    }
-                } else {
-                    parsedData = zohoResponseData; // Assume it's already an object/parsed
-                }
-                
-                // Check if the actual response is nested (e.g., in a 'response' or 'data' property from the Zoho SDK wrapper)
-                // This is highly dependent on Zoho's SDK structure. Inspect zohoResponseData to confirm.
-                // For now, let's assume parsedData is the direct response body.
-
-                return {
-                    ok: true, // Assume success if no error was thrown by ZOHODESK.request
-                    status: 200, // Assume 200
-                    json: async () => parsedData,
-                    text: async () => (typeof parsedData === 'string' ? parsedData : JSON.stringify(parsedData))
-                };
-
-            } else {
-                console.log("Using fetch()");
-                response = await fetch(url, {
-                    method: method.toUpperCase(),
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-            }
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error(`HTTP error! status: ${response.status}, message: ${errorText}`, response);
-                // Add message to chat here as a fallback, though individual handlers might do it too.
-                addMessageToChat(`Request Error: ${response.status} - ${errorText.substring(0,100)}...`, 'status-message');
-                throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-            }
-            return response; // For fetch, this is the Response object
-        } catch (error) {
-            console.error('Request failed:', error.message); // Log only message to avoid huge objects in console
-            // Don't add to chat here if specific handlers will, to avoid double messages
-            // addMessageToChat(`Error: ${error.message}`, 'status-message');
-            throw error; // Re-throw to be caught by callers if needed
+  // Helper function to deep search for organization data in any object
+  function findOrgDataInObject(obj, path = '') {
+    if (!obj || typeof obj !== 'object') return null;
+    
+    console.log(`🔍 Searching for org data in ${path}:`, obj);
+    
+    // Direct property checks
+    const orgKeys = ['orgId', 'organizationId', 'org_id', 'organization_id'];
+    const nameKeys = ['orgName', 'organizationName', 'companyName', 'name', 'org_name', 'organization_name'];
+    
+    for (const key of orgKeys) {
+      if (obj[key]) {
+        const orgId = obj[key].toString();
+        let orgName = 'UNKNOWN_ORG_NAME';
+        
+        // Look for corresponding name
+        for (const nameKey of nameKeys) {
+          if (obj[nameKey]) {
+            orgName = obj[nameKey];
+            break;
+          }
         }
+        
+        console.log(`✅ Found org data at ${path}.${key}:`, { orgId, orgName });
+        return { orgId, orgName };
+      }
+    }
+    
+    // Deep search in nested objects
+    for (const [key, value] of Object.entries(obj)) {
+      if (typeof value === 'object' && value !== null) {
+        const result = findOrgDataInObject(value, `${path}.${key}`);
+        if (result) return result;
+      }
+    }
+    
+    return null;
+  }
+
+  // Simple request function using fetch
+  async function request(url, body) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      return res;
+    } catch (error) {
+      console.error('Request failed:', error);
+      throw error;
+    }
+  }
+
+  // FIXED: Function to call Refresh Data webhook with timeout and array response handling
+  async function callRefreshDataWebhook(emailId) {
+    console.log('🔄 Calling Refresh Data webhook with email:', emailId);
+    
+    try {
+      // Create AbortController for timeout (30 seconds since it takes <10 seconds)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 seconds timeout
+      
+      const response = await fetch(REFRESH_DATA_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emailId: emailId }),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`Refresh Data webhook failed: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log('✅ Refresh Data webhook response:', data);
+      
+      // FIXED: Handle array response format [{"Order_Summary": "..."}]
+      let orderSummaryData = null;
+      
+      if (Array.isArray(data) && data.length > 0 && data[0].Order_Summary) {
+        // Response is an array: [{"Order_Summary": "..."}]
+        orderSummaryData = data[0];
+        orderSummary = data[0].Order_Summary;
+        console.log('✅ Order Summary received from array format:', orderSummary);
+      } else if (data && data.Order_Summary) {
+        // Response is an object: {"Order_Summary": "..."}
+        orderSummaryData = data;
+        orderSummary = data.Order_Summary;
+        console.log('✅ Order Summary received from object format:', orderSummary);
+      } else {
+        console.error('❌ Invalid response structure:', data);
+        throw new Error('Invalid response format: missing Order_Summary');
+      }
+      
+      return orderSummaryData;
+      
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Refresh Data request timed out after 30 seconds');
+      }
+      console.error('❌ Refresh Data webhook failed:', error);
+      throw error;
+    }
+  }
+
+  // Enhanced getMeta with better organization data extraction
+  async function getMeta() {
+    let meta = {
+      ticketId:      'UNKNOWN_TICKET',
+      orgId:         'UNKNOWN_ORG',
+      orgName:       'UNKNOWN_ORG_NAME',
+      department:    'UNKNOWN_DEPT',
+      departmentId:  'UNKNOWN_DEPT_ID',
+      senderEmail:   'UNKNOWN_EMAIL',
+      contactId:     'UNKNOWN_CONTACT_ID',
+      subject:       'UNKNOWN_SUBJECT',
+      priority:      'UNKNOWN_PRIORITY',
+      status:        'UNKNOWN_STATUS',
+      description:   'UNKNOWN_DESCRIPTION',
+      emailThreads:  [],
+      threadCount:   0
+    };
+    
+    if (!isSDKReady || typeof ZOHODESK === 'undefined') {
+      console.warn('SDK not ready or available');
+      return meta;
     }
 
-
-    function addMessageToChat(htmlContent, type = 'ai-message') {
-        console.log(`addMessageToChat called with type: ${type}, raw content length: ${htmlContent ? htmlContent.length : 0}`);
-        const messageDiv = document.createElement('div');
-        messageDiv.classList.add('message', type);
-        messageDiv.innerHTML = htmlContent; // Use innerHTML for Markdown rendering (marked.parse should return HTML string)
-        chatContainer.appendChild(messageDiv);
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-
-    async function handleChatSubmit() {
-        console.log("handleChatSubmit triggered");
-        const messageText = chatInput.value.trim();
-        if (!messageText) return;
-
-        addMessageToChat(marked.parse(messageText), 'user-message'); // Render user message as MD
-        chatInput.value = '';
-        const currentIsZoho = isInsideZohoDesk();
-
-        try {
-            const response = await makeRequest(N8N_CHAT_WEBHOOK_URL, 'POST', {
-                chatInput: messageText,
-                sessionId: sessionId
-            }, currentIsZoho);
-
-            const data = await response.json();
-            console.log('Chat response from n8n:', data);
-
-            if (data && data.output !== undefined) { // Check if data exists and data.output is not undefined
-                addMessageToChat(marked.parse(data.output), 'ai-message');
-            } else {
-                addMessageToChat("Received no valid content in 'output' field from AI.", 'status-message');
-                console.warn("Response from n8n (chat) did not contain a 'output' key or data was null. Full data:", data);
-            }
-        } catch (error) {
-            console.error('Error in handleChatSubmit:', error);
-            addMessageToChat(`Failed to get AI response: ${error.message}`, 'status-message');
+    try {
+      console.log('=== Step 1: Getting basic ticket data ===');
+      
+      const ticketResponse = await ZOHODESK.get("ticket");
+      console.log('Full ticket response:', ticketResponse);
+      
+      if (ticketResponse && 
+          ticketResponse.status === 'success' && 
+          ticketResponse.ticket && 
+          ticketResponse.ticket.id) {
+        
+        const ticket = ticketResponse.ticket;
+        console.log('Extracting data from ticket:', ticket);
+        
+        // Extract all available basic data
+        meta.ticketId = ticket.id?.toString() || meta.ticketId;
+        meta.subject = ticket.subject || meta.subject;
+        meta.status = ticket.status || meta.status;
+        meta.priority = ticket.priority || meta.priority;
+        meta.description = ticket.description || meta.description;
+        meta.senderEmail = ticket.email || meta.senderEmail;
+        meta.contactId = ticket.contactId?.toString() || meta.contactId;
+        meta.departmentId = ticket.departmentId?.toString() || meta.departmentId;
+        meta.threadCount = parseInt(ticket.threadCount) || 0;
+        
+        // Try to get organization ID from ticket data first
+        const ticketOrgData = findOrgDataInObject(ticket, 'ticket');
+        if (ticketOrgData) {
+          meta.orgId = ticketOrgData.orgId;
+          meta.orgName = ticketOrgData.orgName;
         }
-    }
-
-    async function handleRefresh() {
-        console.log("handleRefresh triggered");
-        addMessageToChat("Refreshing product data...", 'status-message');
-        const currentIsZoho = isInsideZohoDesk();
-
-        try {
-            const response = await makeRequest(N8N_CHAT_WEBHOOK_URL, 'POST', {
-                chatInput: "", // Empty chatInput for refresh action
-                sessionId: sessionId,
-                action: "refresh"
-            }, currentIsZoho);
-
-            const data = await response.json();
-            console.log('Refresh response from n8n:', data);
-
-            // Assuming refresh also returns its message in data.output
-            if (data && data.output !== undefined) {
-                addMessageToChat(marked.parse(data.output), 'status-message');
-            } else {
-                addMessageToChat("Data refresh action completed, but no specific message received in 'output'.", 'status-message');
-                console.warn("Response from n8n (refresh) did not contain an 'output' key or data was null. Full data:", data);
-            }
-        } catch (error) {
-            console.error('Error in handleRefresh:', error);
-            addMessageToChat(`Failed to refresh data: ${error.message}`, 'status-message');
-        }
-    }
-
-    async function handleDraftEmail() {
-        console.log("handleDraftEmail triggered");
-        let ticketId = "TEST_TICKET_123_GH_PAGES"; // Placeholder for GitHub Pages testing
-        let orgId = "TEST_ORG_456_GH_PAGES";    // Placeholder for GitHub Pages testing
-        const currentIsZoho = isInsideZohoDesk();
-
-        if (currentIsZoho) {
-            try {
-                console.log("Attempting to fetch ticket details from ZOHODESK SDK...");
-                const ticketDetails = await ZOHODESK.get("ticket"); // Example: fetches entire ticket object
-                const portalDetails = await ZOHODESK.get("portal"); // Example: fetches portal details
-
-                if (ticketDetails && ticketDetails.id) {
-                    ticketId = ticketDetails.id;
-                } else {
-                    console.warn("Could not get ticket.id from ZOHODESK.get('ticket')", ticketDetails);
-                }
-
-                if (portalDetails && portalDetails.id) { // Assuming portal.id is what you mean by orgId
-                    orgId = portalDetails.id;
-                } else {
-                     console.warn("Could not get portal.id for orgId from ZOHODESK.get('portal')", portalDetails);
-                }
-                console.log("Fetched from Zoho: ticketId=", ticketId, "orgId=", orgId);
-
-            } catch (e) {
-                console.error("Failed to get ticket/org ID from Zoho SDK:", e);
-                alert("Error: Could not retrieve ticket/org details from Zoho Desk. Using placeholders.");
-                // Optionally, you could choose to return here or proceed with placeholders
-            }
-        }
-
-        addMessageToChat(`Attempting to draft email for ticket ${ticketId}...`, 'status-message');
-        try {
-            const response = await makeRequest(N8N_EMAIL_DRAFTER_WEBHOOK_URL, 'POST', {
-                ticketId: ticketId,
-                orgId: orgId
-            }, currentIsZoho);
-
-            // For draft email, the recap only specified HTTP 200 for success alert.
-            // It didn't mention a response body being displayed.
-            if (response.status === 200) {
-                alert('Success! Email draft creation request sent.'); // Browser alert as requested
-                addMessageToChat('Email draft request successful.', 'status-message');
-            } else {
-                // This path should ideally be caught by makeRequest's !response.ok
-                // but as a fallback if makeRequest's ZOHODESK part doesn't perfectly mimic fetch:
-                const errorText = await response.text();
-                alert(`Email draft request may have failed. Status: ${response.status}. Message: ${errorText}`);
-                addMessageToChat(`Email draft request returned status ${response.status}: ${errorText}`, 'status-message');
-            }
-        } catch (error) {
-            console.error('Error in handleDraftEmail:', error);
-            alert(`Failed to send email draft request: ${error.message}`); // Alert for thrown errors
-            addMessageToChat(`Failed to draft email: ${error.message}`, 'status-message');
-        }
-    }
-
-    // Event Listeners
-    if (sendButton) {
-        sendButton.addEventListener('click', handleChatSubmit);
-    } else {
-        console.error("Send button not found!");
-    }
-
-    if (chatInput) {
-        chatInput.addEventListener('keypress', (event) => {
-            if (event.key === 'Enter') {
-                handleChatSubmit();
-            }
+        
+        console.log('✅ Basic data extracted:', {
+          ticketId: meta.ticketId,
+          subject: meta.subject,
+          status: meta.status,
+          departmentId: meta.departmentId,
+          contactId: meta.contactId,
+          threadCount: meta.threadCount,
+          orgId: meta.orgId
         });
-    } else {
-        console.error("Chat input not found!");
+      }
+      
+      // Step 2: Get user data (we know this works)
+      if (meta.orgId === 'UNKNOWN_ORG') {
+        console.log('=== Step 2: Getting user data for organization info ===');
+        try {
+          const userResponse = await ZOHODESK.get("user");
+          console.log('🔍 Full user response structure:', userResponse);
+          
+          if (userResponse && userResponse.status === 'success' && userResponse.user) {
+            console.log('🔍 User object contents:', userResponse.user);
+            
+            // Search for org data in user object
+            const userOrgData = findOrgDataInObject(userResponse.user, 'user');
+            if (userOrgData) {
+              meta.orgId = userOrgData.orgId;
+              meta.orgName = userOrgData.orgName;
+              console.log('✅ Found organization data from user:', { orgId: meta.orgId, orgName: meta.orgName });
+            }
+          }
+        } catch (userErr) {
+          console.error('User method failed:', userErr);
+        }
+      }
+      
+      // Step 3: Get portal data (we know this works too)
+      if (meta.orgId === 'UNKNOWN_ORG') {
+        console.log('=== Step 3: Getting portal data for organization info ===');
+        try {
+          const portalResponse = await ZOHODESK.get("portal");
+          console.log('🔍 Full portal response structure:', portalResponse);
+          
+          if (portalResponse && portalResponse.status === 'success' && portalResponse.portal) {
+            console.log('🔍 Portal object contents:', portalResponse.portal);
+            
+            // Search for org data in portal object
+            const portalOrgData = findOrgDataInObject(portalResponse.portal, 'portal');
+            if (portalOrgData) {
+              meta.orgId = portalOrgData.orgId;
+              meta.orgName = portalOrgData.orgName;
+              console.log('✅ Found organization data from portal:', { orgId: meta.orgId, orgName: meta.orgName });
+            } else {
+              // Manual check for common portal properties
+              const portal = portalResponse.portal;
+              console.log('🔍 Manual portal property check:', {
+                hasOrgId: !!portal.orgId,
+                hasOrganizationId: !!portal.organizationId,
+                hasId: !!portal.id,
+                hasName: !!portal.name,
+                hasCompanyName: !!portal.companyName,
+                allKeys: Object.keys(portal)
+              });
+              
+              // Sometimes portal.id IS the org ID
+              if (portal.id && !portal.orgId && !portal.organizationId) {
+                meta.orgId = portal.id.toString();
+                meta.orgName = portal.name || portal.companyName || meta.orgName;
+                console.log('✅ Using portal.id as organization ID:', { orgId: meta.orgId, orgName: meta.orgName });
+              }
+            }
+          }
+        } catch (portalErr) {
+          console.error('Portal method failed:', portalErr);
+        }
+      }
+      
+      // Step 4: Try some other documented SDK properties
+      if (meta.orgId === 'UNKNOWN_ORG') {
+        console.log('=== Step 4: Trying other SDK properties ===');
+        
+        const otherMethods = ['account', 'context', 'extension.context'];
+        
+        for (const method of otherMethods) {
+          try {
+            console.log(`🔍 Trying ZOHODESK.get("${method}")...`);
+            const response = await ZOHODESK.get(method);
+            console.log(`${method} response:`, response);
+            
+            if (response && response.status === 'success') {
+              const data = response[method] || response.data || response;
+              const orgData = findOrgDataInObject(data, method);
+              if (orgData) {
+                meta.orgId = orgData.orgId;
+                meta.orgName = orgData.orgName;
+                console.log(`✅ Found organization data from ${method}:`, { orgId: meta.orgId, orgName: meta.orgName });
+                break;
+              }
+            }
+          } catch (methodErr) {
+            console.log(`❌ ${method} failed:`, methodErr.message);
+          }
+        }
+      }
+      
+      // Set department name using the ID
+      if (meta.departmentId !== 'UNKNOWN_DEPT_ID') {
+        meta.department = `Department ID: ${meta.departmentId}`;
+        console.log('✅ Department set with ID:', meta.department);
+      }
+      
+      console.log('=== Final metadata collected ===', meta);
+      
+    } catch (e) {
+      console.error('❌ getMeta() error:', e);
+      updateStatus('Error fetching ticket data: ' + e.message, true);
+    }
+    
+    return meta;
+  }
+
+  /* ========== Chat handler ========== */
+  async function handleSend() {
+    const text = chatInput.value.trim();
+    if (!text) return;
+    
+    addMsg(markedParse(text), 'user-message');
+    chatInput.value = '';
+    sendButton.disabled = true;
+
+    try {
+      updateStatus('Fetching complete ticket data...');
+      const meta = await getMeta();
+      
+      // Create comprehensive payload
+      const payload = { 
+        sessionId, 
+        chatInput: text, 
+        ...meta,
+        requestTime: new Date().toISOString(),
+        summary: {
+          hasTicketId: meta.ticketId !== 'UNKNOWN_TICKET',
+          hasOrgData: meta.orgId !== 'UNKNOWN_ORG',
+          hasDepartmentId: meta.departmentId !== 'UNKNOWN_DEPT_ID',
+          hasContactData: meta.contactId !== 'UNKNOWN_CONTACT_ID'
+        }
+      };
+      
+      console.log('📤 Sending comprehensive payload to backend:', payload);
+      
+      updateStatus('Sending message with complete data...');
+      const res = await request(CHAT_URL, payload);
+      const data = await res.json();
+      addMsg(markedParse(data.output ?? '*[no output]*'));
+      updateStatus(`Ready - Org: ${meta.orgId !== 'UNKNOWN_ORG' ? '✅' : '❌'} - Session: ${sessionId.slice(-8)}`);
+    } catch (err) {
+      console.error('Chat error:', err);
+      addMsg(`⚠️ Error: ${err.message}`, 'status-message');
+      updateStatus('Error sending message', true);
+    } finally {
+      sendButton.disabled = false;
+    }
+  }
+
+  /* ========== Enhanced Refresh handler - Order Summary Focus ========== */
+  async function handleRefresh() {
+    if (isRefreshingData) {
+      console.log('⏳ Refresh already in progress, ignoring click');
+      return;
     }
 
-    if (refreshButton) {
-        refreshButton.addEventListener('click', handleRefresh);
-    } else {
-        console.error("Refresh button not found!");
+    refreshButton.disabled = true;
+    isRefreshingData = true;
+    productWindow.innerHTML = 'Loading order information...';
+    updateStatus('Fetching order data...');
+    
+    try {
+      // Step 1: Get basic ticket metadata for email
+      const meta = await getMeta();
+      await new Promise(r => setTimeout(r, 300));
+      
+      // Step 2: Call Refresh Data webhook if we have email
+      if (meta.senderEmail && meta.senderEmail !== 'UNKNOWN_EMAIL') {
+        updateStatus('Fetching order summary from backend...');
+        productWindow.innerHTML = 'Fetching order summary... (usually takes under 10 seconds)';
+        
+        try {
+          await callRefreshDataWebhook(meta.senderEmail);
+          console.log('✅ Order summary updated successfully');
+        } catch (webhookError) {
+          console.error('❌ Refresh Data webhook failed:', webhookError);
+          orderSummary = `**Error fetching order summary:**\n\n${webhookError.message}`;
+        }
+      } else {
+        console.warn('⚠️ No email found, skipping Refresh Data webhook');
+        orderSummary = '**No Order Data Available**\n\nNo customer email found - cannot fetch order summary';
+      }
+      
+      // Step 3: Display Order Summary (this is the main content now)
+      if (orderSummary) {
+        // Display the order summary in markdown format
+        productWindow.innerHTML = markedParse(orderSummary);
+      } else {
+        productWindow.innerHTML = markedParse(`
+**Order Information**
+
+*No order data available yet*
+
+Click "Refresh Data" to fetch order summary for: **${meta.senderEmail}**
+
+*Last updated: ${new Date().toLocaleTimeString()}*
+        `.trim());
+      }
+      
+      updateStatus(`Order data refreshed - Session: ${sessionId.slice(-8)}`);
+    } catch (error) {
+      console.error('Refresh error:', error);
+      productWindow.innerHTML = markedParse(`
+**Error Loading Order Information**
+
+${error.message}
+
+*Please try clicking "Refresh Data" again*
+      `.trim());
+      updateStatus('Error refreshing order data', true);
+    } finally {
+      refreshButton.disabled = false;
+      isRefreshingData = false;
     }
+  }
 
-    if (draftEmailButton) {
-        draftEmailButton.addEventListener('click', handleDraftEmail);
-    } else {
-        console.error("Draft email button not found!");
+  /* ========== Draft handler ========== */
+  async function handleDraft() {
+    draftEmailBtn.disabled = true;
+    updateStatus('Creating draft email...');
+    
+    try {
+      const meta = await getMeta();
+      const res = await request(DRAFT_URL, meta);
+      
+      if (res.ok) {
+        addMsg(`✉️ Draft email request sent successfully.`, 'status-message');
+        updateStatus('Draft email created successfully');
+      }
+    } catch (e) {
+      console.error('Draft error:', e);
+      addMsg(`⚠️ Draft request failed: ${e.message}`, 'status-message');
+      updateStatus('Error creating draft email', true);
+    } finally {
+      draftEmailBtn.disabled = false;
     }
+  }
 
-    // Initial message
-    addMessageToChat("AI Assistant loaded. Session ID: " + sessionId, 'status-message');
-    console.log("Chat widget initialized. Markdown parser (marked):", typeof marked);
-
-
-    // Zoho Desk specific initialization
-    if (isInsideZohoDesk()) {
-        console.log("Attempting Zoho Desk Extension onload registration.");
-        ZOHODESK.extension.onload(async function (app) {
-            console.log("Zoho Desk Extension Loaded successfully!", app);
-            // You can fetch initial data here if needed using app.get() or ZOHODESK.get()
-            // Example:
-            // try {
-            //     const initialTicketData = await ZOHODESK.get("ticket");
-            //     console.log("Initial Ticket Data on load:", initialTicketData);
-            //     addMessageToChat(`Working on ticket: ${initialTicketData.subject || initialTicketData.id}`, 'status-message');
-            // } catch (e) {
-            //     console.error("Error fetching initial ticket data in onload:", e);
-            // }
-        }).catch(function (err) {
-            console.error("Zoho Desk Extension onload registration error:", err);
-        });
+  /* ========== Tabs ========== */
+  function showTab(tab) {
+    if (tab === 'chat') {
+      tabChat.classList.add('active');
+      tabActions.classList.remove('active');
+      contentChat.classList.add('active');
+      contentActions.classList.remove('active');
     } else {
-        console.log("Not running inside Zoho Desk. Skipping ZOHODESK.extension.onload().");
+      tabChat.classList.remove('active');
+      tabActions.classList.add('active');
+      contentChat.classList.remove('active');
+      contentActions.classList.add('active');
     }
+  }
+
+  /* ========== Event Listeners ========== */
+  tabChat.addEventListener('click', () => showTab('chat'));
+  tabActions.addEventListener('click', () => showTab('actions'));
+
+  /* ========== Enhanced SDK Detection and Initialization ========== */
+  async function checkSDK() {
+    if (typeof ZOHODESK !== 'undefined') {
+      console.log('ZOHODESK object found:', ZOHODESK);
+      console.log('Available ZOHODESK methods:', Object.keys(ZOHODESK));
+      
+      isSDKReady = true;
+      updateStatus(`SDK Ready - Session: ${sessionId.slice(-8)}`);
+      
+      // Trigger initial refresh data webhook on extension load
+      try {
+        const meta = await getMeta();
+        if (meta.senderEmail && meta.senderEmail !== 'UNKNOWN_EMAIL') {
+          console.log('🚀 Extension loaded, triggering initial Refresh Data webhook');
+          updateStatus('Loading order summary...');
+          
+          try {
+            await callRefreshDataWebhook(meta.senderEmail);
+            console.log('✅ Initial order summary loaded successfully');
+            updateStatus(`Ready with order data - Session: ${sessionId.slice(-8)}`);
+          } catch (initialWebhookError) {
+            console.error('❌ Initial Refresh Data webhook failed:', initialWebhookError);
+            orderSummary = `**Initial Load Failed**\n\n${initialWebhookError.message}\n\n*Click "Refresh Data" to try again*`;
+            updateStatus(`SDK Ready (order load failed) - Session: ${sessionId.slice(-8)}`, true);
+          }
+        }
+      } catch (metaError) {
+        console.error('❌ Failed to get initial metadata:', metaError);
+      }
+    } else {
+      console.warn('ZOHODESK object not found');
+      updateStatus('SDK not available - Limited functionality', true);
+    }
+    
+    // Enable UI regardless
+    enableUI();
+    
+    // Attach event handlers
+    sendButton.addEventListener('click', handleSend);
+    chatInput.addEventListener('keypress', e => { 
+      if (e.key === 'Enter' && !sendButton.disabled) handleSend(); 
+    });
+    refreshButton.addEventListener('click', handleRefresh);
+    draftEmailBtn.addEventListener('click', handleDraft);
+
+    // Initial messages
+    addMsg(`🚀 AI Assistant loaded with order data integration!`, 'status-message');
+    
+    // Auto-refresh to load order data
+    handleRefresh();
+  }
+
+  // Wait a bit for SDK to load, then check
+  setTimeout(checkSDK, 1000);
 });
