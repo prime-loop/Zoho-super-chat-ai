@@ -1,39 +1,643 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Chat Widget</title>
-    <style>
-        body { font-family: sans-serif; margin: 10px; background-color: #f4f4f4; }
-        #chatContainer { border: 1px solid #ccc; padding: 10px; background-color: white; height: 300px; overflow-y: auto; margin-bottom: 10px; }
-        .message { margin-bottom: 8px; padding: 5px; border-radius: 4px; }
-        .user-message { background-color: #e1f5fe; text-align: right; }
-        .ai-message { background-color: #f0f0f0; }
-        .status-message { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; padding: 8px; text-align: center; font-style: italic; }
-        #chatInput { width: calc(100% - 22px); padding: 10px; margin-bottom: 10px; border: 1px solid #ccc; }
-        button { padding: 10px 15px; margin-right: 5px; background-color: #007bff; color: white; border: none; cursor: pointer; }
-        button:hover { background-color: #0056b3; }
-        #actionsPanel button { margin-bottom: 5px; display: block; width: 100%; }
-    </style>
-    <!-- Include a Markdown library like 'marked.js' -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI SuperChat</title>
+  
+  <!-- IMPORTANT: Include Zoho Desk SDK -->
+  <script src="https://js.zohostatic.com/support/developer_sdk/v1/js/ZohoDeskClientSDK.min.js"></script>
+  
+  <!-- Enhanced Markdown renderer -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
+  
+  <style>
+    /* ─── Zoho Desk Color Variables ───────────────────────────────────────── */
+    :root {
+      --zoho-primary: #1976d2;
+      --zoho-primary-hover: #1565c0;
+      --zoho-primary-light: #e3f2fd;
+      --zoho-secondary: #757575;
+      --zoho-success: #4caf50;
+      --zoho-warning: #ff9800;
+      --zoho-danger: #f44336;
+      
+      --text-primary: #212121;
+      --text-secondary: #757575;
+      --text-muted: #9e9e9e;
+      --text-inverse: #ffffff;
+      
+      --bg-primary: #ffffff;
+      --bg-secondary: #f5f5f5;
+      --bg-tertiary: #fafafa;
+      --bg-hover: #f0f0f0;
+      
+      --border-color: #e0e0e0;
+      --border-light: #eeeeee;
+      --border-dark: #bdbdbd;
+      
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+      --shadow-md: 0 3px 6px rgba(0,0,0,0.16), 0 3px 6px rgba(0,0,0,0.23);
+      
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 8px;
+      
+      --font-family: "Roboto", "Helvetica Neue", Arial, sans-serif;
+      --font-size-xs: 13px;
+      --font-size-sm: 14px;
+      --font-size-base: 15px;
+      --font-size-lg: 16px;
+      --font-size-xl: 18px;
+      --font-size-xxl: 20px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: var(--font-family);
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.4;
+      font-size: var(--font-size-base);
+    }
+
+    /* ─── FIXED: Full Width Root Container ─────────────────────────────────── */
+    #root {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100%; /* FULL WIDTH */
+      min-width: 100%; /* ENSURE FULL WIDTH */
+      background: var(--bg-primary);
+      overflow: hidden;
+      /* REMOVED: max-width constraint that was causing the gap */
+    }
+
+    /* ─── Status Bar - Full Width ─────────────────────────────────────────── */
+    #statusBar {
+      width: 100%; /* FULL WIDTH */
+      padding: 10px 16px;
+      background: var(--zoho-primary);
+      color: var(--text-inverse);
+      font-size: var(--font-size-sm);
+      font-weight: 500;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    #statusBar::before {
+      content: '●';
+      color: var(--zoho-success);
+      font-size: 10px;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* ─── Full Width Tabs ──────────────────────────────────────────────────── */
+    .tabs {
+      display: flex;
+      width: 100%; /* FULL WIDTH */
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .tab-button {
+      flex: 1;
+      width: 50%; /* EQUAL WIDTH DISTRIBUTION */
+      padding: 12px 16px;
+      text-align: center;
+      cursor: pointer;
+      background: none;
+      border: none;
+      font-size: var(--font-size-base);
+      font-weight: 500;
+      color: var(--text-secondary);
+      transition: all 0.2s ease;
+      border-radius: 0;
+    }
+
+    .tab-button:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .tab-button.active {
+      background: var(--bg-primary);
+      color: var(--zoho-primary);
+      font-weight: 600;
+      border-bottom: 2px solid var(--zoho-primary);
+    }
+
+    /* ─── Full Width Tab Content ───────────────────────────────────────────── */
+    .tab-content {
+      flex: 1;
+      width: 100%; /* FULL WIDTH */
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .tab-content.active {
+      display: flex;
+    }
+
+    /* ─── Full Width Chat Container ────────────────────────────────────────── */
+    #chatContainer {
+      flex: 1;
+      width: 100%; /* FULL WIDTH */
+      padding: 16px;
+      overflow-y: auto;
+      background: var(--bg-tertiary);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    #chatContainer::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    #chatContainer::-webkit-scrollbar-track {
+      background: var(--bg-secondary);
+    }
+
+    #chatContainer::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 3px;
+    }
+
+    /* ─── Messages ─────────────────────────────────────────────────────────── */
+    .message {
+      max-width: 95%;
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-base);
+      line-height: 1.4;
+      word-wrap: break-word;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .user-message {
+      background: var(--zoho-primary);
+      color: var(--text-inverse);
+      margin-left: auto;
+      border-bottom-right-radius: var(--radius-sm);
+    }
+
+    .ai-message {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      border: 1px solid var(--border-light);
+      margin-right: auto;
+      border-bottom-left-radius: var(--radius-sm);
+    }
+
+    .status-message {
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-light);
+      padding: 10px 12px;
+      text-align: center;
+      font-style: italic;
+      font-size: var(--font-size-sm);
+      border-radius: var(--radius-sm);
+      max-width: 100%;
+      margin: 8px auto;
+    }
+
+    /* ─── Full Width Chat Input ────────────────────────────────────────────── */
+    #chatInputContainer {
+      display: flex;
+      width: 100%; /* FULL WIDTH */
+      gap: 12px;
+      padding: 16px;
+      background: var(--bg-primary);
+      border-top: 1px solid var(--border-color);
+      align-items: flex-end;
+    }
+
+    #chatInput {
+      flex: 1;
+      padding: 12px 14px;
+      font-size: var(--font-size-base);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      transition: border-color 0.2s ease;
+      font-family: var(--font-family);
+      min-height: 40px;
+    }
+
+    #chatInput:focus {
+      outline: none;
+      border-color: var(--zoho-primary);
+    }
+
+    #sendButton {
+      padding: 12px 16px;
+      font-size: var(--font-size-base);
+      font-weight: 500;
+      background: var(--zoho-primary);
+      color: var(--text-inverse);
+      border: none;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      min-height: 40px;
+      font-family: var(--font-family);
+    }
+
+    #sendButton:hover:not(:disabled) {
+      background: var(--zoho-primary-hover);
+    }
+
+    #sendButton:disabled {
+      background: var(--border-color);
+      color: var(--text-muted);
+      cursor: not-allowed;
+    }
+
+    /* ─── Full Width Actions Container ─────────────────────────────────────── */
+    #actionsContainer {
+      flex: 1;
+      width: 100%; /* FULL WIDTH */
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-tertiary);
+      padding: 16px;
+      gap: 16px;
+      overflow-y: auto;
+    }
+
+    .action-header {
+      font-weight: 600;
+      font-size: var(--font-size-xl);
+      color: var(--text-primary);
+      text-align: left;
+      margin-bottom: 8px;
+      font-family: var(--font-family);
+    }
+
+    /* ─── FIXED: Full Width Product Window ─────────────────────────────────── */
+    #productWindow {
+      flex: 1;
+      width: 100%; /* FULL WIDTH */
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      overflow-y: auto;
+      font-size: var(--font-size-base);
+      line-height: 1.5;
+      font-family: var(--font-family);
+    }
+
+    #productWindow::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    #productWindow::-webkit-scrollbar-track {
+      background: var(--bg-secondary);
+    }
+
+    #productWindow::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 3px;
+    }
+
+    /* ─── ENHANCED Markdown Styling ────────────────────────────────────────── */
+    #productWindow h1 {
+      color: var(--text-primary);
+      font-size: var(--font-size-xxl);
+      font-weight: 700;
+      margin-bottom: 16px;
+      border-bottom: 3px solid var(--zoho-primary);
+      padding-bottom: 10px;
+      font-family: var(--font-family);
+      line-height: 1.3;
+    }
+
+    #productWindow h2 {
+      color: var(--zoho-primary);
+      font-size: var(--font-size-xl);
+      font-weight: 600;
+      margin: 20px 0 12px 0;
+      font-family: var(--font-family);
+      line-height: 1.3;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #productWindow h3 {
+      color: var(--text-secondary);
+      font-size: var(--font-size-lg);
+      font-weight: 600;
+      margin: 16px 0 10px 0;
+      font-family: var(--font-family);
+      line-height: 1.3;
+    }
+
+    #productWindow h4 {
+      color: var(--text-primary);
+      font-size: var(--font-size-base);
+      font-weight: 600;
+      margin: 14px 0 8px 0;
+      font-family: var(--font-family);
+    }
+
+    #productWindow p {
+      margin-bottom: 12px;
+      color: var(--text-primary);
+      font-size: var(--font-size-base);
+      line-height: 1.5;
+    }
+
+    #productWindow strong {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    #productWindow em {
+      color: var(--text-secondary);
+      font-style: italic;
+    }
+
+    #productWindow a {
+      color: var(--zoho-primary);
+      text-decoration: none;
+      font-weight: 500;
+      padding: 2px 4px;
+      border-radius: var(--radius-sm);
+      transition: all 0.2s ease;
+    }
+
+    #productWindow a:hover {
+      background: var(--bg-secondary);
+      text-decoration: underline;
+    }
+
+    #productWindow hr {
+      border: none;
+      height: 2px;
+      background: linear-gradient(90deg, var(--border-color), transparent);
+      margin: 16px 0;
+      border-radius: 1px;
+    }
+
+    #productWindow ul, #productWindow ol {
+      margin: 12px 0;
+      padding-left: 24px;
+    }
+
+    #productWindow li {
+      margin-bottom: 6px;
+      line-height: 1.4;
+      font-size: var(--font-size-base);
+    }
+
+    #productWindow blockquote {
+      border-left: 4px solid var(--zoho-primary);
+      padding: 12px 16px;
+      margin: 16px 0;
+      background: var(--bg-secondary);
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      font-style: italic;
+      color: var(--text-secondary);
+    }
+
+    #productWindow code {
+      background: var(--bg-secondary);
+      padding: 3px 6px;
+      border-radius: var(--radius-sm);
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+
+    #productWindow pre {
+      background: var(--bg-secondary);
+      padding: 16px;
+      border-radius: var(--radius-md);
+      overflow-x: auto;
+      margin: 16px 0;
+      border: 1px solid var(--border-color);
+    }
+
+    #productWindow pre code {
+      background: none;
+      padding: 0;
+    }
+
+    /* ─── Full Width Action Buttons ────────────────────────────────────────── */
+    .actions-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 100%; /* FULL WIDTH */
+    }
+
+    .action-button {
+      width: 100%; /* FULL WIDTH */
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      font-size: var(--font-size-base);
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-family: var(--font-family);
+      min-height: 44px;
+    }
+
+    .action-button:hover:not(:disabled) {
+      background: var(--zoho-primary);
+      color: var(--text-inverse);
+      border-color: var(--zoho-primary);
+    }
+
+    .action-button:disabled {
+      background: var(--bg-secondary);
+      color: var(--text-muted);
+      border-color: var(--border-light);
+      cursor: not-allowed;
+    }
+
+    #refreshButton::before {
+      content: '🔄';
+      font-size: 14px;
+    }
+
+    #draftEmailButton::before {
+      content: '✏️';
+      font-size: 14px;
+    }
+
+    .quick-actions-section {
+      width: 100%; /* FULL WIDTH */
+      margin-top: auto;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .quick-actions-header {
+      font-weight: 600;
+      font-size: var(--font-size-lg);
+      color: var(--text-primary);
+      margin-bottom: 12px;
+      font-family: var(--font-family);
+    }
+  </style>
 </head>
 <body>
-    <h3>AI Chat</h3>
-    <div id="chatContainer">
+  <div id="root">
+    <!-- Full Width Status Bar -->
+    <div id="statusBar">AI Assistant Ready</div>
+
+    <!-- Full Width Tabs -->
+    <div class="tabs">
+      <button id="tab-chat" class="tab-button active">💬 Chat</button>
+      <button id="tab-actions" class="tab-button">📊 Orders</button>
+    </div>
+
+    <!-- Chat Tab Content -->
+    <div id="content-chat" class="tab-content active">
+      <div id="chatContainer">
         <!-- Chat messages will appear here -->
+      </div>
+      <div id="chatInputContainer">
+        <input
+          type="text"
+          id="chatInput"
+          placeholder="Type message..."
+          autocomplete="off"
+          disabled
+        />
+        <button id="sendButton" disabled>Send</button>
+      </div>
     </div>
-    <input type="text" id="chatInput" placeholder="Type your message...">
-    <button id="sendButton">Send</button>
 
-    <hr>
-    <h3>Actions</h3>
-    <div id="actionsPanel">
-        <button id="refreshButton">Product Refresh</button>
-        <button id="draftEmailButton">Draft Email Reply</button>
+    <!-- Actions Tab Content -->
+    <div id="content-actions" class="tab-content">
+      <div id="actionsContainer">
+        <!-- Order Information Section -->
+        <div class="action-header">Order Info</div>
+        <div id="productWindow">Loading order data...</div>
+
+        <!-- Quick Actions Section -->
+        <div class="quick-actions-section">
+          <div class="quick-actions-header">Actions</div>
+          <div class="actions-grid">
+            <button id="refreshButton" class="action-button" disabled>
+              Refresh Data
+            </button>
+            <button id="draftEmailButton" class="action-button" disabled>
+              Draft Reply
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
+  </div>
 
-    <script src="embed.js"></script>
+  <!-- FIXED: Enhanced Markdown Configuration -->
+  <script>
+    // Debug function to test markdown
+    function debugMarkdown() {
+      console.log('🔍 Debugging Markdown Setup...');
+      console.log('marked available:', typeof marked !== 'undefined');
+      
+      if (typeof marked !== 'undefined') {
+        console.log('marked version:', marked.defaults);
+        
+        // Test parse
+        const testMarkdown = '## Test Header\n**Bold text**\nNormal text';
+        const result = marked.parse(testMarkdown);
+        console.log('Test parse result:', result);
+      }
+    }
+
+    // Enhanced marked.js configuration
+    if (typeof marked !== 'undefined') {
+      console.log('✅ marked.js loaded successfully');
+      
+      marked.setOptions({
+        breaks: true,
+        gfm: true,
+        sanitize: false,
+        smartLists: true,
+        smartypants: false,
+        xhtml: false
+      });
+      
+      console.log('✅ marked.js configured');
+    } else {
+      console.error('❌ marked.js not loaded');
+    }
+
+    // FIXED: Enhanced markdown parser with debugging
+    const markedParse = (content) => {
+      console.log('🔍 Parsing markdown content:', content?.substring(0, 100) + '...');
+      
+      if (!content || typeof content !== 'string') {
+        console.warn('⚠️ Invalid content for markdown parsing');
+        return content || '';
+      }
+      
+      try {
+        if (typeof marked === 'function') {
+          const htmlOutput = marked.parse(content);
+          console.log('✅ Markdown parsed successfully:', htmlOutput?.substring(0, 100) + '...');
+          return htmlOutput;
+        } else if (typeof marked === 'object' && marked.parse) {
+          const htmlOutput = marked.parse(content);
+          console.log('✅ Markdown parsed successfully (object method):', htmlOutput?.substring(0, 100) + '...');
+          return htmlOutput;
+        } else {
+          console.error('❌ marked.parse not available');
+          return content;
+        }
+      } catch (error) {
+        console.error('❌ Markdown parsing error:', error);
+        return content;
+      }
+    };
+
+    // Test markdown on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => {
+        debugMarkdown();
+        
+        // Test the productWindow directly
+        const testContent = '## 🧾 Test Header\n**Bold text** and normal text\n\n### Subheader\nSome content here.';
+        const parsed = markedParse(testContent);
+        console.log('Test parsed content:', parsed);
+      }, 1000);
+    });
+  </script>
+
+  <!-- Main widget logic -->
+  <script src="embed.js"></script>
 </body>
 </html>
