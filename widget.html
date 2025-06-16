@@ -508,52 +508,52 @@
       margin-bottom: 12px;
       font-family: var(--font-family);
     }
-/* Headings get more vertical space */
-#productWindow h1,
-#productWindow h2,
-#productWindow h3,
-#productWindow h4 {
-  /* bump top-and-bottom margins */
-  margin: 1.5em 0 0.75em;
-  line-height: 1.3; /* keeps heading tight but distinct */
-}
-
-/* Paragraphs need more air */
-#productWindow p {
-  margin: 1em 0;      /* instead of 12px bottom, use 1em top+bottom */
-  line-height: 1.6;   /* a touch looser for readability */
-}
-
-/* Lists get consistent spacing */
-#productWindow ul,
-#productWindow ol {
-  margin: 1em 0;      /* bigger gap between list and other elements */
-  padding-left: 1.5em;
-}
-#productWindow li {
-  margin-bottom: 0.75em; /* space between items */
-  line-height: 1.5;
-}
-
-/* Blockquotes deserve some flair and space */
-#productWindow blockquote {
-  margin: 1.25em 0;
-  padding: 1em 1.25em;
-}
-
-/* Code blocks & inline code gaps */
-#productWindow pre {
-  margin: 1.5em 0;
-}
-#productWindow code:not(pre code) {
-  margin: 0 .2em;
-}
-
-/* Quick catch-all: add a little breathing room above every element */
-#productWindow > * + * {
-  margin-top: 0.8em;
-}
-
+/* ─── Revamped Markdown Spacing ───────────────────────────────────────── */
+  /* Add more breathing room between every block */
+  #productWindow > * + * {
+    margin-top: 1.25em;
+  }
+  
+  /* Headings */
+  #productWindow h1,
+  #productWindow h2,
+  #productWindow h3,
+  #productWindow h4 {
+    margin: 1.5em 0 0.5em;
+    line-height: 1.3;
+  }
+  
+  /* Paragraphs */
+  #productWindow p {
+    /* top & bottom margin, loose line-height */
+    margin: 1em 0;
+    line-height: 1.6;
+  }
+  
+  /* Lists */
+  #productWindow ul,
+  #productWindow ol {
+    margin: 1em 0 1em 1.5em;
+    padding: 0;
+  }
+  #productWindow li {
+    margin-bottom: 0.75em;
+    line-height: 1.5;
+  }
+  
+  /* Blockquotes */
+  #productWindow blockquote {
+    margin: 1.25em 0;
+    padding: 1em 1.25em;
+  }
+  
+  /* Code blocks */
+  #productWindow pre {
+    margin: 1.5em 0;
+  }
+  #productWindow code:not(pre code) {
+    margin: 0 0.2em;
+  }
   </style>
 </head>
 <body>
